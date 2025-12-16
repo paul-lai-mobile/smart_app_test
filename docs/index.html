@@ -6,12 +6,15 @@
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 16px; }
-    pre  { border: 1px solid #ccc; padding: 8px; max-height: 40vh; overflow: auto; }
+    pre  { border: 1px solid #ccc; padding: 8px; max-height: 35vh; overflow: auto; }
     h2   { margin-top: 24px; }
   </style>
 </head>
 <body>
   <h1>SMART Statin CDS (Debug)</h1>
+
+  <h2>Decision</h2>
+  <pre id="decision">Computing statin recommendation...</pre>
 
   <h2>Patient</h2>
   <pre id="patient">Loading patient...</pre>
@@ -20,12 +23,45 @@
   <pre id="obs">Loading observations...</pre>
 
   <script type="text/javascript">
-    // 先填入你剛剛在回應中看到建立的 Patient id（location: "Patient/671555/_history/1"）
-    // 取中間那段 671555 當作 patientId
-    const patientId = "671555";
+    const patientId = "671555"; // 你的測試病人 id
+
+    // 從 Observation Bundle 中抓出第一筆 LDL-C 數值（mg/dL）
+    function extractLdlValue(obsBundle) {
+      if (!obsBundle || !obsBundle.entry) return null;
+
+      // 直接拿第一筆 Observation 的 valueQuantity（目前你只塞一筆 LDL-C）
+      const first = obsBundle.entry[0] && obsBundle.entry[0].resource;
+      if (!first) return null;
+      if (first.valueQuantity && typeof first.valueQuantity.value === "number") {
+        return first.valueQuantity.value;
+      }
+      return null;
+    }
+
+    // 非常簡化版 Statin 建議（只看 LDL-C）
+    function evaluateStatinRecommendation(ldlValue) {
+      if (ldlValue === null) {
+        return "找不到 LDL-C 檢驗值，無法給出建議。";
+      }
+
+      // 示意邏輯：假設一般風險成年人，LDL-C ≥ 130 mg/dL 建議啟動 Statin。
+      // 參考台灣初級預防共識中對有一項風險因子的 130 mg/dL 門檻作為簡化示意。 [web:87]
+      if (ldlValue >= 130) {
+        return (
+          "LDL-C = " + ldlValue + " mg/dL\n" +
+          "建議：啟動中等強度 Statin，並合併生活型態調整。\n" +
+          "說明：示意邏輯（未區分完整風險分層），以 LDL-C ≥ 130 mg/dL 作為起始治療門檻。"
+        );
+      } else {
+        return (
+          "LDL-C = " + ldlValue + " mg/dL\n" +
+          "建議：暫以生活型態調整與追蹤為主，尚無強制啟動 Statin 的需求（示意邏輯）。"
+        );
+      }
+    }
 
     FHIR.oauth2.ready().then(function (client) {
-      // 1) 不再用 client.patient.read()，改成直接用固定 id 讀 Patient
+      // 讀 Patient
       client.request("Patient/" + patientId).then(
         function (pt) {
           document.getElementById("patient").innerText =
@@ -37,25 +73,33 @@
         }
       );
 
-      // 2) 用同一個 patientId 查 Observation
+      // 讀 Observation，並同時用來算決策
       client.request("Observation?patient=" + patientId, {
         pageLimit: 0
       }).then(
         function (bundle) {
           document.getElementById("obs").innerText =
             JSON.stringify(bundle, null, 2);
+
+          const ldl = extractLdlValue(bundle);
+          const decision = evaluateStatinRecommendation(ldl);
+          document.getElementById("decision").innerText = decision;
         },
         function (error) {
           document.getElementById("obs").innerText =
             error.stack || String(error);
+          document.getElementById("decision").innerText =
+            "讀取 Observation 失敗，無法計算建議。\n" +
+            (error.stack || String(error));
         }
       );
     }).catch(function (err) {
-      document.getElementById("patient").innerText =
-        "SMART init error:\n" + (err.stack || String(err));
-      document.getElementById("obs").innerText =
-        "SMART init error:\n" + (err.stack || String(err));
+      const msg = "SMART init error:\n" + (err.stack || String(err));
+      document.getElementById("patient").innerText = msg;
+      document.getElementById("obs").innerText = msg;
+      document.getElementById("decision").innerText = msg;
     });
   </script>
 </body>
 </html>
+
