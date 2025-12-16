@@ -2,8 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>SMART Statin CDS - Debug View</title>
-  <!-- 一樣載入 SMART on FHIR JS Client -->
+  <title>SMART Statin CDS - Debug</title>
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 16px; }
@@ -21,34 +20,41 @@
   <pre id="obs">Loading observations...</pre>
 
   <script type="text/javascript">
-    // 等待 SMART OAuth 流程完成，取得 client
+    // 先填入你剛剛在回應中看到建立的 Patient id（location: "Patient/671555/_history/1"）
+    // 取中間那段 671555 當作 patientId
+    const patientId = "671555";
+
     FHIR.oauth2.ready().then(function (client) {
-      // 1) 讀取目前脈絡中的病人
-      client.patient.read().then(
+      // 1) 不再用 client.patient.read()，改成直接用固定 id 讀 Patient
+      client.request("Patient/" + patientId).then(
         function (pt) {
           document.getElementById("patient").innerText =
             JSON.stringify(pt, null, 2);
         },
         function (error) {
-          document.getElementById("patient").innerText = error.stack || String(error);
+          document.getElementById("patient").innerText =
+            error.stack || String(error);
         }
       );
 
-      // 2) 查詢這個病人的所有 Observation（先不過濾，之後再加 code 過濾 LDL-C）
-      client.request("Observation?patient=" + client.patient.id, {
-        pageLimit: 0        // 把所有分頁都抓回來（如果有的話）
+      // 2) 用同一個 patientId 查 Observation
+      client.request("Observation?patient=" + patientId, {
+        pageLimit: 0
       }).then(
         function (bundle) {
           document.getElementById("obs").innerText =
             JSON.stringify(bundle, null, 2);
         },
         function (error) {
-          document.getElementById("obs").innerText = error.stack || String(error);
+          document.getElementById("obs").innerText =
+            error.stack || String(error);
         }
       );
     }).catch(function (err) {
-      document.getElementById("patient").innerText = "SMART init error:\n" + (err.stack || String(err));
-      document.getElementById("obs").innerText     = "SMART init error:\n" + (err.stack || String(err));
+      document.getElementById("patient").innerText =
+        "SMART init error:\n" + (err.stack || String(err));
+      document.getElementById("obs").innerText =
+        "SMART init error:\n" + (err.stack || String(err));
     });
   </script>
 </body>
