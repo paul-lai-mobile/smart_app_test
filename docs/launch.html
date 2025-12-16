@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>SMART Statin CDS Launch</title>
+  <!-- 從 CDN 載入 SMART on FHIR JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
+</head>
+<body>
+  <p>Launching SMART Statin CDS App...</p>
+
+  <script type="text/javascript">
+    // EHR Launch 入口：由 THAS SAND-BOX 帶入 iss、launch 兩個 query 參數
+    // 這裡只需呼叫 authorize，成功後會 redirect 到 index.html
+    FHIR.oauth2.authorize({
+      clientId: "my_smart_app_client",       // 之後改成實際註冊的 client_id
+      scope: "launch openid fhirUser patient.read observation.read condition.read medicationrequest.read",
+      redirectUri: "./index.html"            // 授權成功後導向的主畫面
+    });
+  </script>
+</body>
+</html>
