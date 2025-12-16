@@ -6,30 +6,35 @@
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 16px; }
-    pre  { border: 1px solid #ccc; padding: 8px; max-height: 35vh; overflow: auto; }
-    h2   { margin-top: 24px; }
+    pre  { border: 1px solid #ccc; padding: 8px; max-height: 30vh; overflow: auto; }
+    h2   { margin-top: 20px; }
+    .row { margin-bottom: 8px; }
   </style>
 </head>
 <body>
   <h1>SMART Statin CDS (Debug)</h1>
 
+  <div class="row">
+    <label for="patientSelect">選擇測試個案：</label>
+    <select id="patientSelect">
+      <option value="671555">個案 A：55 歲一般風險（LDL 130）</option>
+      <option value="671561">個案 B：62 歲糖尿病（LDL 120）</option>
+    </select>
+  </div>
+
   <h2>Decision</h2>
-  <pre id="decision">Computing statin recommendation...</pre>
+  <pre id="decision">請選擇個案...</pre>
 
   <h2>Patient</h2>
-  <pre id="patient">Loading patient...</pre>
+  <pre id="patient">Waiting...</pre>
 
   <h2>Observations</h2>
-  <pre id="obs">Loading observations...</pre>
+  <pre id="obs">Waiting...</pre>
 
   <script type="text/javascript">
-    const patientId = "671555"; // 你的測試病人 id
-
-    // 從 Observation Bundle 中抓出第一筆 LDL-C 數值（mg/dL）
+    // 從 Observation Bundle 中抓第一筆 LDL-C
     function extractLdlValue(obsBundle) {
       if (!obsBundle) return null;
-
-      // 有些情況伺服器會回傳 [bundle] 陣列，先攤平成單一 Bundle
       const bundle = Array.isArray(obsBundle) ? obsBundle[0] : obsBundle;
       if (!bundle.entry || !bundle.entry.length) return null;
 
@@ -37,7 +42,13 @@
         const res = e.resource;
         if (!res || res.resourceType !== "Observation") continue;
 
-        // 之後可以再加上 code 過濾（LOINC LDL-C），目前先拿第一筆有 valueQuantity 的
+        // 只挑 LOINC LDL-C
+        const codings = (res.code && res.code.coding) || [];
+        const hasLdlCode = codings.some(c =>
+          c.system === "http://loinc.org" && c.code === "13457-7"
+        );
+        if (!hasLdlCode) continue;
+
         if (res.valueQuantity && typeof res.valueQuantity.value === "number") {
           return res.valueQuantity.value;
         }
@@ -45,53 +56,77 @@
       return null;
     }
 
-    // 非常簡化版 Statin 建議（只看 LDL-C）
-    function evaluateStatinRecommendation(ldlValue) {
+    // 示意版 Statin 建議（一般風險 vs 高風險）
+    function evaluateStatinRecommendation(ldlValue, isHighRisk) {
       if (ldlValue === null) {
         return "找不到 LDL-C 檢驗值，無法給出建議。";
       }
 
-      // 示意邏輯：假設一般風險成年人，LDL-C ≥ 130 mg/dL 建議啟動 Statin。 [web:87]
-      if (ldlValue >= 130) {
-        return (
-          "LDL-C = " + ldlValue + " mg/dL\n" +
-          "建議：啟動中等強度 Statin，並合併生活型態調整。\n" +
-          "說明：示意邏輯（未區分完整風險分層），以 LDL-C ≥ 130 mg/dL 作為起始治療門檻。"
-        );
+      if (isHighRisk) {
+        // 高風險（例如糖尿病），示意目標 <100 mg/dL，部分指引建議 <70。 [web:18][web:112]
+        if (ldlValue >= 100) {
+          return (
+            "LDL-C = " + ldlValue + " mg/dL\n" +
+            "風險層級：高風險（例如第 2 型糖尿病）。\n" +
+            "建議：啟動或加強中～高強度 Statin，並評估合併 ezetimibe 的需求。\n" +
+            "說明：此為簡化示意，參考台灣血脂管理共識，高風險族群 LDL 目標通常 <100 mg/dL，部分建議 <70 mg/dL。"
+          );
+        } else {
+          return (
+            "LDL-C = " + ldlValue + " mg/dL\n" +
+            "風險層級：高風險（例如第 2 型糖尿病）。\n" +
+            "建議：目前接近目標，可持續既有 Statin 治療並規律追蹤。"
+          );
+        }
       } else {
-        return (
-          "LDL-C = " + ldlValue + " mg/dL\n" +
-          "建議：暫以生活型態調整與追蹤為主，尚無強制啟動 Statin 的需求（示意邏輯）。"
-        );
+        // 一般風險示意門檻 130 mg/dL。 [web:18][web:108]
+        if (ldlValue >= 130) {
+          return (
+            "LDL-C = " + ldlValue + " mg/dL\n" +
+            "風險層級：一般～中等風險。\n" +
+            "建議：考慮啟動中等強度 Statin，並合併飲食與運動調整。\n" +
+            "說明：此為簡化示意，參考台灣初級預防指引，以 LDL ≥130 mg/dL 作為開始藥物治療的門檻之一。"
+          );
+        } else {
+          return (
+            "LDL-C = " + ldlValue + " mg/dL\n" +
+            "風險層級：一般～中等風險。\n" +
+            "建議：以生活型態調整與定期追蹤為主，可暫不啟動 Statin（示意）。"
+          );
+        }
       }
     }
 
-    FHIR.oauth2.ready().then(function (client) {
+    function loadForPatient(client, patientId) {
+      const isHighRisk = (patientId !== "671555"); // 把個案 B 視為高風險
+
+      document.getElementById("decision").innerText = "載入中...";
+      document.getElementById("patient").innerText = "載入中...";
+      document.getElementById("obs").innerText = "載入中...";
+
       // 讀 Patient
       client.request("Patient/" + patientId).then(
-        function (pt) {
+        pt => {
           document.getElementById("patient").innerText =
             JSON.stringify(pt, null, 2);
         },
-        function (error) {
+        error => {
           document.getElementById("patient").innerText =
             error.stack || String(error);
         }
       );
 
-      // 讀 Observation，並同時用來算決策
-      client.request("Observation?patient=" + patientId, {
-        pageLimit: 0
-      }).then(
-        function (bundle) {
+      // 讀 Observation
+      client.request("Observation?patient=" + patientId, { pageLimit: 0 }).then(
+        bundle => {
           document.getElementById("obs").innerText =
             JSON.stringify(bundle, null, 2);
 
           const ldl = extractLdlValue(bundle);
-          const decision = evaluateStatinRecommendation(ldl);
+          const decision = evaluateStatinRecommendation(ldl, isHighRisk);
           document.getElementById("decision").innerText = decision;
         },
-        function (error) {
+        error => {
           document.getElementById("obs").innerText =
             error.stack || String(error);
           document.getElementById("decision").innerText =
@@ -99,6 +134,17 @@
             (error.stack || String(error));
         }
       );
+    }
+
+    FHIR.oauth2.ready().then(function (client) {
+      const select = document.getElementById("patientSelect");
+
+      // 初次載入（預設個案 A）
+      loadForPatient(client, select.value);
+
+      select.addEventListener("change", function () {
+        loadForPatient(client, this.value);
+      });
     }).catch(function (err) {
       const msg = "SMART init error:\n" + (err.stack || String(err));
       document.getElementById("patient").innerText = msg;
@@ -108,3 +154,4 @@
   </script>
 </body>
 </html>
+
