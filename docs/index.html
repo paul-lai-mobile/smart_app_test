@@ -27,13 +27,20 @@
 
     // 從 Observation Bundle 中抓出第一筆 LDL-C 數值（mg/dL）
     function extractLdlValue(obsBundle) {
-      if (!obsBundle || !obsBundle.entry) return null;
+      if (!obsBundle) return null;
 
-      // 直接拿第一筆 Observation 的 valueQuantity（目前你只塞一筆 LDL-C）
-      const first = obsBundle.entry[0] && obsBundle.entry[0].resource;
-      if (!first) return null;
-      if (first.valueQuantity && typeof first.valueQuantity.value === "number") {
-        return first.valueQuantity.value;
+      // 有些情況伺服器會回傳 [bundle] 陣列，先攤平成單一 Bundle
+      const bundle = Array.isArray(obsBundle) ? obsBundle[0] : obsBundle;
+      if (!bundle.entry || !bundle.entry.length) return null;
+
+      for (const e of bundle.entry) {
+        const res = e.resource;
+        if (!res || res.resourceType !== "Observation") continue;
+
+        // 之後可以再加上 code 過濾（LOINC LDL-C），目前先拿第一筆有 valueQuantity 的
+        if (res.valueQuantity && typeof res.valueQuantity.value === "number") {
+          return res.valueQuantity.value;
+        }
       }
       return null;
     }
@@ -44,8 +51,7 @@
         return "找不到 LDL-C 檢驗值，無法給出建議。";
       }
 
-      // 示意邏輯：假設一般風險成年人，LDL-C ≥ 130 mg/dL 建議啟動 Statin。
-      // 參考台灣初級預防共識中對有一項風險因子的 130 mg/dL 門檻作為簡化示意。 [web:87]
+      // 示意邏輯：假設一般風險成年人，LDL-C ≥ 130 mg/dL 建議啟動 Statin。 [web:87]
       if (ldlValue >= 130) {
         return (
           "LDL-C = " + ldlValue + " mg/dL\n" +
@@ -102,4 +108,3 @@
   </script>
 </body>
 </html>
-
